@@ -1,7 +1,7 @@
 import { getServerSession } from 'next-auth';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { Plus, ExternalLink, Settings, GitBranch, Lock } from 'lucide-react';
+import { Plus, ExternalLink, Settings, GitBranch, Lock, ScrollText } from 'lucide-react';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { Logo } from '@/components/ui/Logo';
@@ -31,6 +31,9 @@ export default async function DashboardPage() {
             <nav className="hidden md:flex items-center gap-6">
               <Link href="/dashboard" className="text-sm font-medium text-slate-900 dark:text-white">
                 Projects
+              </Link>
+              <Link href="/dashboard/logs" className="text-sm font-medium text-slate-500 hover:text-slate-900 dark:hover:text-white">
+                Logs
               </Link>
             </nav>
           </div>

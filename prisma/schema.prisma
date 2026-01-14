@@ -131,3 +131,23 @@ model DailyStats {
   @@unique([projectId, date])
   @@index([projectId])
 }
+
+
+// System Logs
+model SystemLog {
+  id        String   @id @default(cuid())
+  level     String   // DEBUG, INFO, WARN, ERROR
+  category  String   // AUTH, CACHE, DATABASE, GITHUB, WEBHOOK, DOMAIN, API, PAGE, SYSTEM
+  message   String
+  details   String?  @db.Text
+  projectId String?
+  userId    String?
+  duration  Int?     // milliseconds
+  error     String?  @db.Text
+  createdAt DateTime @default(now())
+
+  @@index([level])
+  @@index([category])
+  @@index([projectId])
+  @@index([createdAt])
+}
