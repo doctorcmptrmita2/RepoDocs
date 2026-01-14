@@ -6,7 +6,7 @@
 
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getCachedNav, checkRedisHealth } from '@/lib/cache';
+import { getCachedNav, checkRedisHealth, getCacheMode } from '@/lib/cache';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,8 +43,11 @@ export async function GET() {
 
   // Redis
   try {
+    const cacheMode = getCacheMode();
     const redisOk = await checkRedisHealth();
     debug.redis = {
+      mode: cacheMode.mode,
+      enabled: cacheMode.enabled,
       status: redisOk ? 'connected' : 'disconnected',
     };
   } catch (error: any) {

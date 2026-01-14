@@ -1,8 +1,8 @@
 /**
- * Redis Cache Layer (Self-Hosted)
+ * Cache Layer - Redis or In-Memory
  * 
- * Uses ioredis for standard Redis connection.
- * All doc content is cached here after webhook processing.
+ * Redis varsa Redis kullanır, yoksa in-memory cache kullanır.
+ * REDIS_URL environment variable'ı ile kontrol edilir.
  * 
  * Cache Strategy:
  * - Write: On GitHub webhook (push event)
@@ -10,18 +10,59 @@
  * - Invalidate: On webhook or manual refresh
  */
 
-import Redis from 'ioredis';
 import type { ParsedDoc, NavItem, CachedProject, VersionsCache } from '@/types';
 import { getProjectCacheKey, getDocCacheKey, getNavCacheKey, getVersionsCacheKey } from '@/lib/utils';
 
-// Use globalThis to persist Redis client across hot reloads and workers
-const globalForRedis = globalThis as unknown as { redis: Redis | undefined };
+// ==================== CACHE MODE DETECTION ====================
 
-function getRedis(): Redis {
-  if (!globalForRedis.redis) {
-    const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+const REDIS_ENABLED = !!process.env.REDIS_URL && process.env.REDIS_URL !== 'disabled';
+
+// ==================== IN-MEMORY CACHE ====================
+
+const memoryCache = new Map<string, { data: string; expiry: number }>();
+
+function memoryGet(key: string): string | null {
+  const item = memoryCache.get(key);
+  if (!item) return null;
+  if (Date.now() > item.expiry) {
+    memoryCache.delete(key);
+    return null;
+  }
+  return item.data;
+}
+
+function memorySet(key: string, value: string, ttlSeconds: number): void {
+  memoryCache.set(key, {
+    data: value,
+    expiry: Date.now() + ttlSeconds * 1000,
+  });
+}
+
+function memoryDel(...keys: string[]): void {
+  keys.forEach(key => memoryCache.delete(key));
+}
+
+function memoryExists(key: string): boolean {
+  const item = memoryCache.get(key);
+  if (!item) return false;
+  if (Date.now() > item.expiry) {
+    memoryCache.delete(key);
+    return false;
+  }
+  return true;
+}
+
+// ==================== REDIS CLIENT ====================
+
+let redisClient: any = null;
+
+async function getRedis() {
+  if (!REDIS_ENABLED) return null;
+  
+  if (!redisClient) {
+    const Redis = (await import('ioredis')).default;
+    const redisUrl = process.env.REDIS_URL!;
     
-    // Parse Redis URL
     let host = 'localhost';
     let port = 6379;
     let password: string | undefined;
@@ -37,37 +78,102 @@ function getRedis(): Redis {
     
     console.log(`Connecting to Redis at ${host}:${port}`);
     
-    globalForRedis.redis = new Redis({
+    redisClient = new Redis({
       host,
       port,
       password,
-      maxRetriesPerRequest: 5,
-      retryStrategy: (times) => {
-        const delay = Math.min(times * 200, 3000);
-        return delay;
+      maxRetriesPerRequest: 3,
+      retryStrategy: (times: number) => {
+        if (times > 3) return null; // Stop retrying
+        return Math.min(times * 200, 2000);
       },
-      reconnectOnError: (err) => {
-        const targetErrors = ['READONLY', 'ECONNRESET', 'ETIMEDOUT'];
-        return targetErrors.some(e => err.message.includes(e));
-      },
-      enableReadyCheck: true,
-      connectTimeout: 10000,
-      keepAlive: 30000,
+      connectTimeout: 5000,
+      lazyConnect: true,
     });
     
-    globalForRedis.redis.on('error', (err) => {
+    redisClient.on('error', (err: Error) => {
       console.error('Redis error:', err.message);
     });
     
-    globalForRedis.redis.on('ready', () => {
+    redisClient.on('ready', () => {
       console.log('Redis ready');
     });
+    
+    try {
+      await redisClient.connect();
+    } catch (err) {
+      console.error('Redis connection failed, falling back to memory cache');
+      redisClient = null;
+    }
   }
-  return globalForRedis.redis;
+  
+  return redisClient;
 }
 
-// Cache TTL: 7 days (webhook will refresh before this)
-const CACHE_TTL = 60 * 60 * 24 * 7;
+// ==================== UNIFIED CACHE INTERFACE ====================
+
+const CACHE_TTL = 60 * 60 * 24 * 7; // 7 days
+const VERSIONS_CACHE_TTL = 60 * 60; // 1 hour
+
+async function cacheGet(key: string): Promise<string | null> {
+  if (REDIS_ENABLED) {
+    try {
+      const redis = await getRedis();
+      if (redis) {
+        return await redis.get(key);
+      }
+    } catch (err) {
+      console.error('Redis get error:', err);
+    }
+  }
+  return memoryGet(key);
+}
+
+async function cacheSet(key: string, value: string, ttl: number = CACHE_TTL): Promise<void> {
+  if (REDIS_ENABLED) {
+    try {
+      const redis = await getRedis();
+      if (redis) {
+        await redis.setex(key, ttl, value);
+        return;
+      }
+    } catch (err) {
+      console.error('Redis set error:', err);
+    }
+  }
+  memorySet(key, value, ttl);
+}
+
+async function cacheDel(...keys: string[]): Promise<void> {
+  if (REDIS_ENABLED) {
+    try {
+      const redis = await getRedis();
+      if (redis && keys.length > 0) {
+        await redis.del(...keys);
+        return;
+      }
+    } catch (err) {
+      console.error('Redis del error:', err);
+    }
+  }
+  memoryDel(...keys);
+}
+
+async function cacheExists(key: string): Promise<boolean> {
+  if (REDIS_ENABLED) {
+    try {
+      const redis = await getRedis();
+      if (redis) {
+        return (await redis.exists(key)) === 1;
+      }
+    } catch (err) {
+      console.error('Redis exists error:', err);
+    }
+  }
+  return memoryExists(key);
+}
+
+// ==================== PUBLIC API ====================
 
 /**
  * Cache entire project data (nav + all docs)
@@ -78,9 +184,6 @@ export async function cacheProject(
   nav: NavItem[],
   docs: Record<string, ParsedDoc>
 ): Promise<void> {
-  const client = getRedis();
-  const key = getProjectCacheKey(projectSlug, version);
-  
   const cached: CachedProject = {
     projectId: projectSlug,
     version,
@@ -89,20 +192,16 @@ export async function cacheProject(
     updatedAt: new Date().toISOString(),
   };
 
-  const pipeline = client.pipeline();
-  
   // Cache full project
-  pipeline.setex(key, CACHE_TTL, JSON.stringify(cached));
+  await cacheSet(getProjectCacheKey(projectSlug, version), JSON.stringify(cached));
   
   // Cache nav separately for quick access
-  pipeline.setex(getNavCacheKey(projectSlug, version), CACHE_TTL, JSON.stringify(nav));
+  await cacheSet(getNavCacheKey(projectSlug, version), JSON.stringify(nav));
   
   // Cache individual docs for granular access
   for (const [slug, doc] of Object.entries(docs)) {
-    pipeline.setex(getDocCacheKey(projectSlug, version, slug), CACHE_TTL, JSON.stringify(doc));
+    await cacheSet(getDocCacheKey(projectSlug, version, slug), JSON.stringify(doc));
   }
-
-  await pipeline.exec();
 }
 
 /**
@@ -112,9 +211,7 @@ export async function getCachedProject(
   projectSlug: string,
   version: string
 ): Promise<CachedProject | null> {
-  const client = getRedis();
-  const key = getProjectCacheKey(projectSlug, version);
-  const data = await client.get(key);
+  const data = await cacheGet(getProjectCacheKey(projectSlug, version));
   return data ? JSON.parse(data) : null;
 }
 
@@ -125,9 +222,7 @@ export async function getCachedNav(
   projectSlug: string,
   version: string
 ): Promise<NavItem[] | null> {
-  const client = getRedis();
-  const key = getNavCacheKey(projectSlug, version);
-  const data = await client.get(key);
+  const data = await cacheGet(getNavCacheKey(projectSlug, version));
   return data ? JSON.parse(data) : null;
 }
 
@@ -139,9 +234,7 @@ export async function getCachedDoc(
   version: string,
   docSlug: string
 ): Promise<ParsedDoc | null> {
-  const client = getRedis();
-  const key = getDocCacheKey(projectSlug, version, docSlug);
-  const data = await client.get(key);
+  const data = await cacheGet(getDocCacheKey(projectSlug, version, docSlug));
   return data ? JSON.parse(data) : null;
 }
 
@@ -152,9 +245,6 @@ export async function invalidateProjectCache(
   projectSlug: string,
   version: string
 ): Promise<void> {
-  const client = getRedis();
-  
-  // Get project to find all doc keys
   const project = await getCachedProject(projectSlug, version);
   
   const keysToDelete = [
@@ -163,15 +253,12 @@ export async function invalidateProjectCache(
   ];
   
   if (project) {
-    // Add all doc cache keys
     for (const slug of Object.keys(project.docs)) {
       keysToDelete.push(getDocCacheKey(projectSlug, version, slug));
     }
   }
   
-  if (keysToDelete.length > 0) {
-    await client.del(...keysToDelete);
-  }
+  await cacheDel(...keysToDelete);
 }
 
 /**
@@ -181,9 +268,7 @@ export async function isProjectCached(
   projectSlug: string,
   version: string
 ): Promise<boolean> {
-  const client = getRedis();
-  const key = getProjectCacheKey(projectSlug, version);
-  return (await client.exists(key)) === 1;
+  return cacheExists(getProjectCacheKey(projectSlug, version));
 }
 
 /**
@@ -204,21 +289,34 @@ export async function getCacheStats(projectSlug: string): Promise<{
 }
 
 /**
- * Health check for Redis connection
+ * Health check for cache
  */
 export async function checkRedisHealth(): Promise<boolean> {
+  if (!REDIS_ENABLED) {
+    return true; // Memory cache is always "healthy"
+  }
+  
   try {
-    const client = getRedis();
-    const pong = await client.ping();
-    return pong === 'PONG';
+    const redis = await getRedis();
+    if (redis) {
+      const pong = await redis.ping();
+      return pong === 'PONG';
+    }
+    return false;
   } catch {
     return false;
   }
 }
 
-
-// Versions cache TTL: 1 hour (shorter since versions change less frequently but should be fresh)
-const VERSIONS_CACHE_TTL = 60 * 60;
+/**
+ * Get cache mode info
+ */
+export function getCacheMode(): { mode: 'redis' | 'memory'; enabled: boolean } {
+  return {
+    mode: REDIS_ENABLED ? 'redis' : 'memory',
+    enabled: REDIS_ENABLED,
+  };
+}
 
 /**
  * Cache project versions (branches + tags)
@@ -227,9 +325,7 @@ export async function cacheVersions(
   projectSlug: string,
   versions: VersionsCache
 ): Promise<void> {
-  const client = getRedis();
-  const key = getVersionsCacheKey(projectSlug);
-  await client.setex(key, VERSIONS_CACHE_TTL, JSON.stringify(versions));
+  await cacheSet(getVersionsCacheKey(projectSlug), JSON.stringify(versions), VERSIONS_CACHE_TTL);
 }
 
 /**
@@ -238,9 +334,7 @@ export async function cacheVersions(
 export async function getCachedVersions(
   projectSlug: string
 ): Promise<VersionsCache | null> {
-  const client = getRedis();
-  const key = getVersionsCacheKey(projectSlug);
-  const data = await client.get(key);
+  const data = await cacheGet(getVersionsCacheKey(projectSlug));
   return data ? JSON.parse(data) : null;
 }
 
@@ -250,7 +344,5 @@ export async function getCachedVersions(
 export async function invalidateVersionsCache(
   projectSlug: string
 ): Promise<void> {
-  const client = getRedis();
-  const key = getVersionsCacheKey(projectSlug);
-  await client.del(key);
+  await cacheDel(getVersionsCacheKey(projectSlug));
 }
