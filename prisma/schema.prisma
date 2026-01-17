@@ -76,6 +76,7 @@ model Project {
   isPrivate       Boolean  @default(false)
   webhookId       Int?
   webhookSecret   String?
+  branding        Json?    @default("{}") // Branding settings (logo, colors, footer, etc.)
   userId          String
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   versions        Version[]

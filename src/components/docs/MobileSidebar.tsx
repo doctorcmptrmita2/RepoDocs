@@ -2,20 +2,28 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { Menu, X, ChevronRight, FileText, Folder } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { VersionSelector } from './VersionSelector';
 import type { NavItem } from '@/types';
+import type { BrandingSettings } from '@/types/branding';
 
 interface MobileSidebarProps {
   nav: NavItem[];
   projectSlug: string;
   version: string;
+  branding?: BrandingSettings;
+  projectName?: string;
 }
 
-export function MobileSidebar({ nav, projectSlug, version }: MobileSidebarProps) {
+export function MobileSidebar({ nav, projectSlug, version, branding, projectName }: MobileSidebarProps) {
   const [open, setOpen] = useState(false);
+  
+  const logoUrl = branding?.logoUrl;
+  const siteTitle = branding?.siteTitle || projectName || projectSlug;
+  const primaryColor = branding?.primaryColor || '#3B82F6';
 
   return (
     <>
@@ -43,7 +51,30 @@ export function MobileSidebar({ nav, projectSlug, version }: MobileSidebarProps)
       )}>
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-800">
-          <span className="font-semibold text-slate-900 dark:text-white">Navigation</span>
+          <Link 
+            href={`/docs/${projectSlug}/${version}`}
+            className="flex items-center gap-2"
+            onClick={() => setOpen(false)}
+          >
+            {logoUrl ? (
+              <Image
+                src={logoUrl}
+                alt={siteTitle}
+                width={24}
+                height={24}
+                className="h-6 w-auto object-contain"
+                unoptimized
+              />
+            ) : (
+              <div 
+                className="h-6 w-6 rounded flex items-center justify-center text-white font-bold text-xs"
+                style={{ backgroundColor: primaryColor }}
+              >
+                {siteTitle.charAt(0).toUpperCase()}
+              </div>
+            )}
+            <span className="font-semibold text-slate-900 dark:text-white text-sm">{siteTitle}</span>
+          </Link>
           <button
             onClick={() => setOpen(false)}
             className="p-1 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
@@ -65,6 +96,7 @@ export function MobileSidebar({ nav, projectSlug, version }: MobileSidebarProps)
             version={version} 
             depth={0}
             onNavigate={() => setOpen(false)}
+            primaryColor={primaryColor}
           />
         </nav>
       </div>
@@ -78,12 +110,14 @@ function NavList({
   version,
   depth,
   onNavigate,
+  primaryColor,
 }: {
   items: NavItem[];
   projectSlug: string;
   version: string;
   depth: number;
   onNavigate: () => void;
+  primaryColor: string;
 }) {
   return (
     <ul className={cn('space-y-1', depth > 0 && 'ml-4 mt-1')}>
@@ -95,6 +129,7 @@ function NavList({
           version={version}
           depth={depth}
           onNavigate={onNavigate}
+          primaryColor={primaryColor}
         />
       ))}
     </ul>
@@ -107,12 +142,14 @@ function NavItemComponent({
   version,
   depth,
   onNavigate,
+  primaryColor,
 }: {
   item: NavItem;
   projectSlug: string;
   version: string;
   depth: number;
   onNavigate: () => void;
+  primaryColor: string;
 }) {
   const pathname = usePathname();
   const href = `/docs/${projectSlug}/${version}/${item.path}`;
@@ -132,6 +169,7 @@ function NavItemComponent({
           version={version}
           depth={depth + 1}
           onNavigate={onNavigate}
+          primaryColor={primaryColor}
         />
       </li>
     );
@@ -145,9 +183,13 @@ function NavItemComponent({
         className={cn(
           'flex items-center gap-2 px-3 py-2 text-sm rounded-lg transition',
           isActive
-            ? 'bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400 font-medium'
+            ? 'font-medium'
             : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
         )}
+        style={isActive ? {
+          backgroundColor: `${primaryColor}15`,
+          color: primaryColor,
+        } : undefined}
       >
         <FileText className="w-4 h-4" />
         {item.title}

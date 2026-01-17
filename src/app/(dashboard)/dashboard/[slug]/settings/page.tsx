@@ -13,6 +13,10 @@ import { CustomDomainForm } from '@/components/dashboard/CustomDomainForm';
 import { WebhookManager } from '@/components/dashboard/WebhookManager';
 import { AnalyticsCard } from '@/components/dashboard/AnalyticsCard';
 import { LintCard } from '@/components/dashboard/LintCard';
+import { BrandingForm } from '@/components/dashboard/BrandingForm';
+import { BrandingPreview } from '@/components/dashboard/BrandingPreview';
+import type { BrandingSettings } from '@/types/branding';
+import { DEFAULT_BRANDING } from '@/types/branding';
 
 interface PageProps {
   params: Promise<{ slug: string }>;
@@ -32,11 +36,19 @@ export default async function ProjectSettingsPage({ params }: PageProps) {
       slug,
       userId: session.user.id 
     },
+    include: {
+      user: {
+        select: { plan: true },
+      },
+    },
   });
 
   if (!project) {
     notFound();
   }
+
+  const branding = (project.branding as BrandingSettings) || DEFAULT_BRANDING;
+  const userPlan = project.user.plan;
 
   const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
   const docsUrl = project.customDomain 
@@ -144,6 +156,36 @@ export default async function ProjectSettingsPage({ params }: PageProps) {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <AnalyticsCard projectSlug={project.slug} />
               <LintCard projectSlug={project.slug} />
+            </div>
+          </section>
+
+          {/* Branding */}
+          <section>
+            <h2 className="text-sm font-medium text-slate-900 dark:text-white mb-4">Branding</h2>
+            <p className="text-sm text-slate-500 mb-6">
+              Customize the appearance of your documentation with your own logo, colors, and more.
+            </p>
+            
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+              {/* Form */}
+              <div>
+                <BrandingForm 
+                  projectSlug={project.slug}
+                  initialSettings={branding}
+                  userPlan={userPlan}
+                />
+              </div>
+              
+              {/* Preview */}
+              <div className="xl:sticky xl:top-20 xl:self-start">
+                <h3 className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">
+                  Live Preview
+                </h3>
+                <BrandingPreview 
+                  settings={branding}
+                  projectName={project.name}
+                />
+              </div>
             </div>
           </section>
 

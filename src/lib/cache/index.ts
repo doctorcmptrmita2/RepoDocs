@@ -11,6 +11,7 @@
  */
 
 import type { ParsedDoc, NavItem, CachedProject, VersionsCache } from '@/types';
+import type { BrandingSettings } from '@/types/branding';
 import { getProjectCacheKey, getDocCacheKey, getNavCacheKey, getVersionsCacheKey } from '@/lib/utils';
 
 // ==================== CACHE MODE DETECTION ====================
@@ -345,4 +346,44 @@ export async function invalidateVersionsCache(
   projectSlug: string
 ): Promise<void> {
   await cacheDel(getVersionsCacheKey(projectSlug));
+}
+
+
+// ==================== BRANDING CACHE ====================
+
+/**
+ * Get branding cache key for a project
+ */
+export function getBrandingCacheKey(projectSlug: string): string {
+  return `branding:${projectSlug}`;
+}
+
+/**
+ * Get cached branding settings for a project
+ */
+export async function getCachedBranding(
+  projectSlug: string
+): Promise<BrandingSettings | null> {
+  const data = await cacheGet(getBrandingCacheKey(projectSlug));
+  return data ? JSON.parse(data) : null;
+}
+
+/**
+ * Cache branding settings for a project
+ * Uses same TTL as project data (7 days)
+ */
+export async function cacheBranding(
+  projectSlug: string,
+  branding: BrandingSettings
+): Promise<void> {
+  await cacheSet(getBrandingCacheKey(projectSlug), JSON.stringify(branding), CACHE_TTL);
+}
+
+/**
+ * Invalidate branding cache for a project
+ */
+export async function invalidateBrandingCache(
+  projectSlug: string
+): Promise<void> {
+  await cacheDel(getBrandingCacheKey(projectSlug));
 }

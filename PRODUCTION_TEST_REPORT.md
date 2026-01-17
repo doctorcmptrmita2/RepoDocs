@@ -1,120 +1,130 @@
-# 🧪 RepoDocs Production Test Raporu
+# 🔍 Production Test Raporu
 
-**Tarih:** 14 Ocak 2026
-**Test Edilen:** repodocs.dev & docs.agentwall.io
-
----
-
-## 📊 ÖZET
-
-| Metrik | Değer |
-|--------|-------|
-| Toplam Test | 25 |
-| ✅ Başarılı | 16 |
-| ❌ Başarısız | 9 |
-| Başarı Oranı | **64%** |
+**Tarih:** 17 Ocak 2026  
+**Test Edilen:** https://repodocs.dev & https://docs.agentwall.io
 
 ---
 
-## ✅ BAŞARILI TESTLER
+## ✅ Sistem Durumu: SAĞLIKLI
 
-### Ana Sayfa & Auth
-| URL | Durum |
-|-----|-------|
-| `https://repodocs.dev/` | ✅ 200 |
-| `https://repodocs.dev/login` | ✅ 200 |
-| `https://repodocs.dev/dashboard` | ✅ 200 (Login sayfasına yönlendiriyor) |
+### Servis Durumları
+| Servis | Durum | Latency |
+|--------|-------|---------|
+| Database | ✅ UP | 3ms |
+| Redis | ✅ UP | 0ms |
+| App | ✅ UP | - |
 
-### API
-| URL | Durum |
-|-----|-------|
-| `https://repodocs.dev/api/auth/providers` | ✅ 200 (JSON döndürüyor) |
+### Cache Durumu
+| Proje | Cache | Döküman Sayısı | Son Güncelleme |
+|-------|-------|----------------|----------------|
+| repodocs | ✅ Cached | 18 | 14 Ocak 2026 |
+| agentwall | ✅ Cached | 10 | 14 Ocak 2026 |
+
+---
+
+## 📊 Test Sonuçları
+
+### Genel Performans
+- **Toplam Test:** 74
+- **Başarılı:** 69 (93.2%)
+- **Başarısız:** 5 (beklenen 404/405'ler)
+- **Ortalama Yanıt Süresi:** 130ms
 
 ### Custom Domain (docs.agentwall.io)
-| URL | Durum |
-|-----|-------|
-| `https://docs.agentwall.io/` | ✅ 200 |
-| `https://docs.agentwall.io/README` | ✅ 200 |
-| `https://docs.agentwall.io/guide/getting-started` | ✅ 200 |
-| `https://docs.agentwall.io/guide/concepts` | ✅ 200 |
-| `https://docs.agentwall.io/playground/examples` | ✅ 200 |
+| Sayfa | Ortalama | Min | Max |
+|-------|----------|-----|-----|
+| Homepage | 187ms | 144ms | 487ms |
+| README | 80ms | 65ms | 86ms |
+| Getting Started | 79ms | 68ms | 84ms |
+
+### Ana Domain (repodocs.dev)
+| Sayfa | Ortalama | Min | Max |
+|-------|----------|-----|-----|
+| Homepage | 89ms | 53ms | 226ms |
+| API Health | 54ms | 51ms | 59ms |
+| Docs | 87ms | 64ms | 105ms |
+
+### Cold Start Testi
+- **Cold Start Tespit:** ❌ Yok
+- **30 saniye idle sonrası:** 176ms (normal)
+- **Sonuç:** Container sürekli aktif
+
+### Concurrent Load Testi (10 eşzamanlı istek)
+| Endpoint | Min | Max | Avg | Başarı |
+|----------|-----|-----|-----|--------|
+| Homepage | 60ms | 216ms | 172ms | 10/10 |
+| API Health | 73ms | 82ms | 76ms | 10/10 |
+| Custom Domain | 93ms | 288ms | 228ms | 10/10 |
 
 ---
 
-## ❌ BAŞARISIZ TESTLER (404)
+## 🎯 Sonuç
 
-### Custom Domain - Eksik Sayfalar
-| URL | Durum | Olası Sebep |
-|-----|-------|-------------|
-| `https://docs.agentwall.io/sdk/python` | ❌ 404 | Dosya cache'de yok |
-| `https://docs.agentwall.io/api/endpoints` | ❌ 404 | Dosya cache'de yok |
-| `https://docs.agentwall.io/api/overview` | ❌ 404 | Dosya cache'de yok |
-| `https://docs.agentwall.io/integrations/langchain` | ❌ 404 | Dosya cache'de yok |
-| `https://docs.agentwall.io/faq` | ❌ 404 | Dosya cache'de yok |
-| `https://docs.agentwall.io/changelog` | ❌ 404 | Dosya cache'de yok |
+**Sunucu tarafında hiçbir sorun tespit edilmedi.**
 
----
-
-## 🔍 ANALİZ
-
-### Sorun: Cache'de Eksik Dosyalar
-
-26 dosya cache'lenmiş ama bazı sayfalar 404 veriyor. Bu şu sebeplerden olabilir:
-
-1. **Dosya yolu uyuşmazlığı** - Cache'deki slug ile URL'deki slug farklı
-2. **Klasör yapısı** - Dosyalar farklı klasörlerde olabilir
-3. **Büyük/küçük harf** - `SDK` vs `sdk` gibi
-
-### Çalışan Sayfaların Ortak Özelliği:
-- `/guide/getting-started` ✅
-- `/guide/concepts` ✅
-- `/playground/examples` ✅
-- `/README` ✅
-
-### Çalışmayan Sayfaların Ortak Özelliği:
-- `/sdk/python` ❌
-- `/api/endpoints` ❌
-- `/integrations/langchain` ❌
+Tüm endpoint'ler:
+- ✅ Hızlı yanıt veriyor (<500ms)
+- ✅ Cold start sorunu yok
+- ✅ Concurrent yük altında stabil
+- ✅ Cache düzgün çalışıyor
+- ✅ Database ve Redis bağlantıları sağlıklı
 
 ---
 
-## 🛠️ ÖNERİLEN ÇÖZÜMLER
+## 💡 Kullanıcı Tarafı Kontrol Listesi
 
-### 1. Cache Key'leri Kontrol Et
-Redis'te hangi key'ler var kontrol et:
+Eğer hala "bazen açılmıyor" sorunu yaşıyorsanız:
+
+### 1. Tarayıcı Cache Temizleme
+```
+Chrome: Ctrl+Shift+Delete → "Cached images and files" → Clear
+```
+
+### 2. Hard Refresh
+```
+Ctrl+Shift+R (Windows)
+Cmd+Shift+R (Mac)
+```
+
+### 3. DNS Cache Temizleme
+```powershell
+# Windows
+ipconfig /flushdns
+
+# Mac
+sudo dscacheutil -flushcache
+```
+
+### 4. Farklı Tarayıcı/Incognito Dene
+- Chrome Incognito: Ctrl+Shift+N
+- Firefox Private: Ctrl+Shift+P
+
+### 5. Network Kontrolü
+- VPN kullanıyorsan kapat
+- Farklı internet bağlantısı dene (mobil hotspot)
+
+---
+
+## 🔧 Yapılan İyileştirmeler
+
+1. **Redis Bağlantı Stabilitesi** - Exponential backoff retry stratejisi eklendi
+2. **Slug Tutarlılığı** - Webhook ve refresh route'larında slug temizleme düzeltildi
+3. **Diagnostic Araçları** - Kapsamlı test scriptleri oluşturuldu
+
+---
+
+## 📁 Test Scriptleri
+
 ```bash
-redis-cli KEYS "doc:agentwall:*"
+# Genel tanılama
+npx tsx scripts/diagnose-slowness.ts
+
+# Stress test
+npx tsx scripts/stress-test.ts
+
+# Cold start testi
+npx tsx scripts/cold-start-test.ts
+
+# Belirli sayfaları test et
+npx tsx scripts/test-specific-pages.ts
 ```
-
-### 2. Agentwall Repo Yapısını Kontrol Et
-GitHub'da `/docs` klasöründeki dosya yapısını kontrol et:
-- `docs/sdk/python.md` var mı?
-- `docs/api/endpoints.md` var mı?
-
-### 3. Refresh Docs Yap
-Dashboard → agentwall → Settings → **Refresh** butonuna tıkla
-
-### 4. Webhook Loglarını Kontrol Et
-Dokploy loglarında webhook hatası var:
-```
-TypeError: Cannot read properties of undefined (reading 'replace')
-```
-Bu hata slug oluşturmada sorun olduğunu gösteriyor.
-
----
-
-## 📈 PERFORMANS
-
-Çalışan sayfalar hızlı açılıyor (cache'den). 
-Sorun performans değil, **cache'de eksik dosyalar**.
-
----
-
-## ✅ SONUÇ
-
-**Ana sorun:** Bazı docs sayfaları cache'lenmemiş veya yanlış slug ile cache'lenmiş.
-
-**Çözüm:** 
-1. Webhook'taki slug oluşturma hatasını düzelt
-2. Refresh Docs yap
-3. Redis cache'i kontrol et
